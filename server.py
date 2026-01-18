@@ -11,14 +11,14 @@ COUNTDOWN_START = 3
 
 class GameServer:
     def __init__(self, host="localhost", port=12345):
-        self.server = socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.bind((host, port))
         self.server.listen(2)
         print("Server has started!")
 
         self.clients = {0: None, 1: None}
         self.connected = {0: False, 1: False}
-        self.lock = threading.lock()
+        self.lock = threading.Lock()
         self.reset_game_state()
         self.sound_event = None
         self.bot_active = False
@@ -27,10 +27,10 @@ class GameServer:
         self.paddles = {0:250, 1:250}
         self.scores = [0,0]
         self.ball = {
-            "x":WIDTH // 2,
+            "x": WIDTH // 2,
             "y": WIDTH // 2,
-            "vx": BALL_SPEED * random_choice([-1, 1]),
-            "vy": BALL_SPEED * random_choice([-1, 1])
+            "vx": BALL_SPEED * random.choice([-1, 1]),
+            "vy": BALL_SPEED * random.choice([-1, 1])
         }
         self.countdown = COUNTDOWN_START
         self.game_over = False
@@ -58,16 +58,16 @@ class GameServer:
         while self.countdown > 0 and not self.game_over:
             time.sleep(0.1)
 
-    while not self.game_over:
-        with self.lock:
-            ball_y = self.ball["y"]
-            paddle_y = self.paddles[1]
+        while not self.game_over:
+            with self.lock:
+                ball_y = self.ball["y"]
+                paddle_y = self.paddles[1]
 
-            if ball_y < paddle_y + 45:
-                self.paddles[1] = max(60, paddle_y -PADDLE_SPEED)
-            elif ball_y > paddle_y + 55:
-                self.paddles[1] = min(HEIGHT - 100, paddle_y + PADDLE_SPEED)
-        time.sleep(0.016)
+                if ball_y < paddle_y + 45:
+                    self.paddles[1] = max(60, paddle_y -PADDLE_SPEED)
+                elif ball_y > paddle_y + 55:
+                    self.paddles[1] = min(HEIGHT - 100, paddle_y + PADDLE_SPEED)
+                    time.sleep(0.016)
 
     def broadcast_state(self):
         state = json.dumps({
@@ -92,7 +92,7 @@ class GameServer:
                 self.countdown -= 1
                 self.broadcast_state()
 
-        while not self.game_over:
+         while not self.game_over:
             with self.lock:
                 self.ball['x'] += self.ball['vx']
                 self.ball['y'] += self.ball['vy']
@@ -159,3 +159,24 @@ class GameServer:
             threading.Thread(target=self.run_bot, daemon=True).start()
         finally:
             self.server.settimeout(None)
+
+    def run(self):
+        while True:
+            self.accept_players()
+            self.reset_game_state()
+            threading.Thread(target=self.ball_logic, daemon=True).start()
+            while not self.game_over and all(self.connected.values()):
+                time.sleep(0.1)
+            print(f"Гравець {self.winner} переміг!")
+            time.sleep(5)
+            for pid in [0,1]:
+                try:
+                    if self.clients[pid]:
+                        self.clients[pid].close()
+                except:
+                    pass
+                self.clients[pid] = None
+                self.connected[pid] = False
+            self.bot_active = False
+
+GameServer().run()
